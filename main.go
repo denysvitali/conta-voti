@@ -86,7 +86,7 @@ func detectVotable(scheda string) []image.Rectangle {
 		
 		if area > 500 {
 			rect := gocv.BoundingRect(c)
-			if rect.Size().X >= 300 && rect.Size().Y > 80 {
+			if rect.Size().X >= 300 && rect.Size().Y > 80 && rect.Size().X < 350 && rect.Size().Y < 110{
 				fmt.Printf("size: X = %v, Y = %v\n", rect.Size().X, rect.Size().Y)
 				gocv.Rectangle(&contourMat, rect, GreenColor, 2)
 				foundRects = append(foundRects, rect)
