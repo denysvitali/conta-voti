@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"gocv.io/x/gocv"
-	"image/color"
 	"image"
+	"image/color"
 )
 
 var GreenColor = color.RGBA{
