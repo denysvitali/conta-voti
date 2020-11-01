@@ -2,9 +2,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/alexflint/go-arg"
 	"gocv.io/x/gocv"
 	"image"
 	"image/color"
+	"io/ioutil"
+	"log"
+	"os"
+	"sort"
 )
 
 var GreenColor = color.RGBA{
@@ -14,36 +19,118 @@ var GreenColor = color.RGBA{
 	A: 255,
 }
 
-func main(){
-	vuota := "/home/dvitali/Downloads/photo_2020-10-31_11-28-15.jpg"
-	piena := "/home/dvitali/Downloads/photo_2020-10-31_12-43-00.jpg"
+type Cli struct {
+	ShowImages bool
+	EmptyCard  string
+	FilledCard string
+	Debug      bool
+}
+
+var args struct {
+	InputCard  string `arg:"-i"`
+	RefCard    string `arg:"-r"`
+	ShowImages bool   `arg:"-s"`
+	Debug      bool   `arg:"-d"`
+}
+
+func main() {
+	arg.MustParse(&args)
+
+	if args.InputCard == "" || args.RefCard == "" {
+		log.Fatal("missing input cards")
+	}
+
+	_, err := os.Open(args.InputCard)
+	if err != nil {
+		log.Fatal("unable to open input card")
+	}
+
+	_, err = os.Open(args.RefCard)
+	if err != nil {
+		log.Fatal("unable to open ref card")
+	}
+
+	c := Cli{
+		ShowImages: args.ShowImages,
+		EmptyCard:  args.RefCard,
+		FilledCard: args.InputCard,
+		Debug:      args.Debug,
+	}
+
+	votableAreas := c.detectVotable()
+	fmt.Printf("votableAreas: %v\n", votableAreas)
+
+	votes := c.detectVotes()
+	log.Printf("votes: %v", votes)
+
+	var voteArr []int
+
+	for _, vote := range votes {
+		var found = false
+		for i, votable := range votableAreas {
+			intersect := votable.Intersect(vote)
+			//fmt.Printf("intersect (%d): %v\n", i, intersect)
+			if !intersect.Empty() {
+				// Voted for him!
+				log.Printf("voted for %v", i)
+				found = true
+				voteArr = append(voteArr, i)
+				break
+			}
+		}
+
+		if !found {
+			log.Printf("vote not found :(")
+		}
+	}
+
+	if len(voteArr) > 3 {
+		log.Printf("invalid vote")
+		os.Exit(-1)
+	}
 	
-	votableAreas := detectVotable(vuota)
-	fmt.Printf("votable areas: %v\n", votableAreas)
-	
-	emptyColor := gocv.IMRead(vuota, gocv.IMReadAnyColor)
-	empty := gocv.IMRead(vuota, gocv.IMReadGrayScale)
-	voted := gocv.IMRead(piena, gocv.IMReadGrayScale)
+	sort.Ints(voteArr)
+	for i, v := range voteArr {
+		fmt.Printf("%v", v)
+		if i < len(voteArr)-1 {
+			fmt.Printf(",")
+		}
+	}
+
+}
+
+func (c Cli) detectVotes() []image.Rectangle {
+	emptyColor := gocv.IMRead(c.EmptyCard, gocv.IMReadAnyColor)
+	empty := gocv.IMRead(c.EmptyCard, gocv.IMReadGrayScale)
+	voted := gocv.IMRead(c.FilledCard, gocv.IMReadGrayScale)
 
 	out := gocv.NewMat()
 	gocv.AbsDiff(empty, voted, &out)
 
-	window := gocv.NewWindow("result")
-	show(window, out)
+	var window *gocv.Window
+	if c.ShowImages {
+		window = gocv.NewWindow("result")
+	}
+	c.show(window, out, "absdiff-out")
 
 	cleanedOut := gocv.NewMatWithSize(voted.Rows(), voted.Cols(), voted.Type())
 	gocv.Threshold(out, &cleanedOut, 7, 255, gocv.ThresholdBinary)
-	show(window, out)
+
+	if c.ShowImages {
+		c.show(window, out, "out")
+	}
 
 	kernel := gocv.GetStructuringElement(gocv.MorphEllipse, image.Pt(3, 3))
-	gocv.Erode(cleanedOut , &out, kernel)
-	gocv.Dilate(out , &cleanedOut, kernel)
+	gocv.Erode(cleanedOut, &out, kernel)
+	gocv.Dilate(out, &cleanedOut, kernel)
 	kernel.Close()
-	
-	show(window, cleanedOut)
+
+	c.show(window, cleanedOut, "cleanedout")
 	contours := gocv.FindContours(cleanedOut, gocv.RetrievalExternal, gocv.ChainApproxSimple)
-	
+
 	outputImg := emptyColor.Clone()
+
+	var votes []image.Rectangle
 
 	red := color.RGBA{
 		R: 255,
@@ -55,52 +142,117 @@ func main(){
 		approxCurve := gocv.ApproxPolyDP(contour, 6, false)
 		area := gocv.ContourArea(approxCurve)
 		if area > 20 {
-			fmt.Printf("area: %v\n", area)
 			br := gocv.BoundingRect(contour)
 			gocv.Rectangle(&outputImg, br, red, 5)
-			fmt.Printf("")
+			votes = append(votes, br)
 		}
 	}
 
-	show(window, outputImg)
-	
+	c.show(window, outputImg, "outputimg")
+
+	return votes
 }
 
-func detectVotable(scheda string) []image.Rectangle {
-	window := gocv.NewWindow("detectVotable")
+type VoteAreas []image.Rectangle
 
-	gray := gocv.IMRead(scheda, gocv.IMReadGrayScale)
+func (v VoteAreas) Len() int {
+	return len(v)
+}
+
+func (v VoteAreas) Less(i, j int) bool {
+	iMin := v[i].Min
+	jMin := v[j].Min
+
+	if iMin.Y < jMin.Y {
+		return true
+	} else if iMin.Y == jMin.Y {
+		if iMin.X < jMin.X {
+			return true
+		}
+		return false
+
+	}
+
+	return false
+}
+
+func (v VoteAreas) Swap(i, j int) {
+	v[i], v[j] = v[j], v[i]
+}
+
+var _ sort.Interface = VoteAreas{}
+
+func (c Cli) detectVotable() VoteAreas {
+	var window *gocv.Window
+	if c.ShowImages {
+		window = gocv.NewWindow("detectVotable")
+	}
+
+	gray := gocv.IMRead(c.EmptyCard, gocv.IMReadGrayScale)
 	gray0 := gray.Clone()
 	gocv.Threshold(gray, &gray0, 80, 255, gocv.ThresholdBinary)
 
 	kern := gocv.GetStructuringElement(gocv.MorphEllipse, image.Pt(5, 5))
 	gocv.Erode(gray0, &gray, kern)
 
-	var foundRects []image.Rectangle
-	contourMat := gocv.IMRead(scheda, gocv.IMReadColor)
+	var foundRects VoteAreas
+	contourMat := gocv.IMRead(c.EmptyCard, gocv.IMReadColor)
 	contours := gocv.FindContours(gray, gocv.RetrievalTree, gocv.ChainApproxSimple)
 
 	for _, c := range contours {
 		area := gocv.ContourArea(c)
-		fmt.Printf("area: %v\n", area)
-		
 		if area > 500 {
 			rect := gocv.BoundingRect(c)
-			if rect.Size().X >= 300 && rect.Size().Y > 80 && rect.Size().X < 350 && rect.Size().Y < 110{
-				fmt.Printf("size: X = %v, Y = %v\n", rect.Size().X, rect.Size().Y)
-				gocv.Rectangle(&contourMat, rect, GreenColor, 2)
-				foundRects = append(foundRects, rect)
+			if rect.Size().X >= 300 && rect.Size().Y > 80 && rect.Size().X < 350 && rect.Size().Y < 110 {
+				// Check if rectangle is inside another previously seen rect
+				var found = false
+				for _, seenRect := range foundRects {
+					if rect.In(seenRect) {
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					foundRects = append(foundRects, rect)
+				}
 			}
 		}
 	}
-	
-	show(window, contourMat)
+
+	sort.Sort(foundRects)
+
+	// Draw rects on contourMat
+	for i, r := range foundRects {
+		gocv.Rectangle(&contourMat, r, GreenColor, 2)
+		gocv.PutText(&contourMat, fmt.Sprintf("%d", i), r.Min,
+			gocv.FontHersheyPlain,
+			5,
+			GreenColor,
+			2)
+
+	}
+	c.show(window, contourMat, "contourMat")
+
 	return foundRects
 }
 
-func show(window *gocv.Window, out gocv.Mat) {
+func (c *Cli) show(window *gocv.Window, out gocv.Mat, niceName string) {
+	if !c.Debug {
+		return
+	}
+	if window == nil {
+		// Window not specified, let's save the image instead
+		f, err := ioutil.TempFile(os.TempDir(), "contavoti-"+niceName+"-*.jpg")
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("saving image: %v", f.Name())
+		gocv.IMWrite(f.Name(), out)
+		return
+	}
 	window.IMShow(out)
-	for ;; {
+	for {
 		if window.WaitKey(5) >= 0 {
 			break
 		}
