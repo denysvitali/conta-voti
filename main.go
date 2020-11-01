@@ -86,7 +86,9 @@ func main() {
 		}
 
 		if !found {
-			log.Printf("vote not found :(")
+			if c.Debug{
+				log.Printf("vote not found :(")
+			}
 		}
 	}
 	
@@ -112,6 +114,7 @@ func main() {
 			fmt.Printf(",")
 		}
 	}
+	fmt.Printf("\n")
 
 }
 
