@@ -58,10 +58,14 @@ func main() {
 	}
 
 	votableAreas := c.detectVotable()
-	fmt.Printf("votableAreas: %v\n", votableAreas)
+	if c.Debug {
+		fmt.Printf("votableAreas: %v\n", votableAreas)
+	}
 
 	votes := c.detectVotes()
-	log.Printf("votes: %v", votes)
+	if c.Debug {
+		log.Printf("votes: %v", votes)
+	}
 
 	var voteArr []int
 
@@ -72,7 +76,9 @@ func main() {
 			//fmt.Printf("intersect (%d): %v\n", i, intersect)
 			if !intersect.Empty() {
 				// Voted for him!
-				log.Printf("voted for %v", i)
+				if c.Debug {
+					log.Printf("voted for %v", i)
+				}
 				found = true
 				voteArr = append(voteArr, i)
 				break
@@ -83,16 +89,26 @@ func main() {
 			log.Printf("vote not found :(")
 		}
 	}
+	
+	voteSet := map[int]bool{}
+	for _, v := range voteArr {
+		voteSet[v] = true
+	}
+	
+	var finalVoteArr []int
+	for k, _ := range voteSet {
+		finalVoteArr = append(finalVoteArr, k)
+	}
 
-	if len(voteArr) > 3 {
+	if len(finalVoteArr) > 3 {
 		log.Printf("invalid vote")
 		os.Exit(-1)
 	}
 	
-	sort.Ints(voteArr)
-	for i, v := range voteArr {
+	sort.Ints(finalVoteArr)
+	for i, v := range finalVoteArr {
 		fmt.Printf("%v", v)
-		if i < len(voteArr)-1 {
+		if i < len(finalVoteArr)-1 {
 			fmt.Printf(",")
 		}
 	}
