@@ -242,16 +242,18 @@ func (c Cli) detectVotable() VoteAreas {
 	sort.Sort(foundRects)
 
 	// Draw rects on contourMat
-	for i, r := range foundRects {
-		gocv.Rectangle(&contourMat, r, GreenColor, 2)
-		gocv.PutText(&contourMat, fmt.Sprintf("%d", i), r.Min,
-			gocv.FontHersheyPlain,
-			5,
-			GreenColor,
-			2)
+	if c.Debug {
+		for i, r := range foundRects {
+			gocv.Rectangle(&contourMat, r, GreenColor, 2)
+			gocv.PutText(&contourMat, fmt.Sprintf("%d", i), r.Min,
+				gocv.FontHersheyPlain,
+				5,
+				GreenColor,
+				2)
 
+		}
+		c.show(window, contourMat, "contourMat")
 	}
-	c.show(window, contourMat, "contourMat")
 
 	return foundRects
 }
